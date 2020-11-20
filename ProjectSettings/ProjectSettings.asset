@@ -585,7 +585,8 @@ PlayerSettings:
   scriptingRuntimeVersion: 1
   gcIncremental: 0
   gcWBarrierValidation: 0
-  apiCompatibilityLevelPerPlatform: {}
+  apiCompatibilityLevelPerPlatform:
+    Standalone: 6
   m_RenderingPath: 1
   m_MobileRenderingPath: 1
   metroPackageName: Template_3D
@@ -646,7 +647,7 @@ PlayerSettings:
       daydreamIconForeground: {fileID: 0}
       daydreamIconBackground: {fileID: 0}
   cloudServicesEnabled:
-    Collab: 1
+    Collab: 0
     UNet: 1
   luminIcon:
     m_Name: 
@@ -665,6 +666,6 @@ PlayerSettings:
   projectName: fighter
   organizationId: unity_7uqoajosmohljg
   cloudEnabled: 0
-  enableNativePlatformBackendsForNewInputSystem: 0
-  disableOldInputManagerSupport: 0
+  enableNativePlatformBackendsForNewInputSystem: 1
+  disableOldInputManagerSupport: 1
   legacyClampBlendShapeWeights: 0

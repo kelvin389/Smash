@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class PlayerController : MonoBehaviour
 {
@@ -12,10 +13,13 @@ public class PlayerController : MonoBehaviour
     public float dashLength;
     public float friction;
 
+    public bool tapJump;
     public float mass;
-    public float jumpForce;
+    public float fullJumpForce;
+    public float shortJumpForce;
     public float fastFallMultiplier;
     public int maxAirJumps;
+    public float jumpSquatLength;
 
     public float airDodgeForce;
     public float airDodgeLength;
@@ -26,40 +30,83 @@ public class PlayerController : MonoBehaviour
     private float airDodgeStartTime = 0f;
 
     private int airJumps = 0;
+    private float jumpSquatStart = 0f;
     private bool inJumpSquat = false;
     private bool grounded = false;
     private bool fastFalling = false;
+    private bool bufferedJump = false;
 
     private bool airDodging = false;
     private bool helpless = false;
 
-    // Start is called before the first frame update
+    private PlayerControls controls;
+    private Vector2 input = Vector2.zero;
+    private float jumpForce;
+
+    void Awake()
+    {
+        controls = new PlayerControls();
+
+        controls.Gameplay.LeftStick.performed += ctx => {
+            if (airDodging) return; // can input while freefalling so we dont call Actionable()
+
+            input = ctx.ReadValue<Vector2>();
+            if (input.x != 0) HorizontalInputHandler();
+            if (input.y != 0) VerticalInputHandler();
+        };
+
+        controls.Gameplay.LeftStick.canceled += ctx => input = Vector2.zero;
+
+        controls.Gameplay.Jump.started += ctx => { // when jump button is pressed, full hop is prepped
+            if (!Actionable()) return;
+
+            JumpInputHandler();
+            jumpForce = fullJumpForce;
+        };
+        controls.Gameplay.Jump.canceled += ctx => jumpForce = shortJumpForce; // if jump button is released in time, short hop force will be loaded
+
+        controls.Gameplay.Shield.started += ctx => {
+            if (!Actionable()) return;
+
+            ShieldInputHandler();
+        };
+    }
+
+    void OnEnable()
+    {
+        controls.Gameplay.Enable();
+    }
+    void OnDisable()
+    {
+        controls.Gameplay.Disable();
+    }
+
     void Start()
     {
         col.material.dynamicFriction = friction;
     }
 
-    // Update is called once per frame
     void Update()
     {
-        Debug.Log(rb.velocity);
-        col.material.dynamicFriction = friction;
-        if (airDodging)
-        {                
-            AirDodgeMove();
-            return; // do not allow further input during an airdodge
+        if (Time.time - jumpSquatStart > jumpSquatLength && bufferedJump) // not >= b/c you are airborne the frame AFTER jumpsquat is over
+        {
+            TryJump();
+            bufferedJump = false;
         }
 
-        Vector2 input = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
-
-        if (input.x != 0)
-            HorizontalInputHandler(input.x);
-        if (input.y != 0)
-            VerticalInputHandler(input.y);
-
-        if (!helpless)
-        {
-            ShieldInputHandler(input);
+        // Debug.Log(rb.velocity);
+        // col.material.dynamicFriction = friction;
+        if (airDodging)
+        {                
+            if (Time.time - airDodgeStartTime >= airDodgeLength || grounded)
+            {
+                StopAirDodge();
+            }
+            else
+            {
+                AirDodgeMove();
+                return; // do not allow further input during an airdodge
+            }
         }
 
     }
@@ -74,15 +121,20 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    private void HorizontalInputHandler(float xInput)
+    private bool Actionable()
+    {
+        return !airDodging && !helpless;
+    }
+
+    private void HorizontalInputHandler()
     {
         float speed = dashSpeed;
 
         // set dashStartTime whenever a movement key is pushed
-        if (Input.GetButtonDown("Horizontal") && (xInput < 0 || xInput > 0))
-        {
+        // if (Input.GetButtonDown("Horizontal") && (input.x < 0 || input.x > 0))
+        // {
             dashStartTime = Time.time;
-        }
+        // }
 
         // if we have been moving in one direction for more than dashLength, then we should be at running speed
         if (Time.time - dashStartTime >= dashLength)
@@ -93,64 +145,80 @@ public class PlayerController : MonoBehaviour
         // read current velocity
         Vector3 vel = rb.velocity;
         // modify x velocity
-        vel.x = xInput * speed;
+        vel.x = input.x * speed;
 
         // set velocity
         rb.velocity = vel;
     }
 
-    private void VerticalInputHandler(float yInput)
+    private void VerticalInputHandler()
     {
-        if (Input.GetButtonDown("Vertical"))
-        {
-            if (yInput > 0) // up
+        // if (Input.GetButtonDown("Vertical"))
+        // {
+            if (input.y > 0 && tapJump) // up
             {
-                TryJump();
+                JumpInputHandler();
             }
-            if (yInput < 0) // down
+            if (input.y < 0) // down
             {
                 if (isFalling())
                 {
                     fastFalling = true;
                 }
             }
-        }
+        // }
     }
 
     private void AirDodgeMove()
     {
-        if (Time.time - airDodgeStartTime >= airDodgeLength || grounded)
+        rb.velocity = Vector2.Lerp(rb.velocity, Vector2.zero, Time.deltaTime * airDodgeStoppingSpeed);
+    }
+
+    private void ShieldInputHandler()
+    {
+        if (grounded && !inJumpSquat)
         {
-            StopAirDodge();
+            // shield
         }
         else
         {
-            rb.velocity = Vector2.Lerp(rb.velocity, Vector2.zero, Time.deltaTime * airDodgeStoppingSpeed);
+            // if tech
+            // else if l-cancel
+
+            // else
+            TryAirDodge();
         }
     }
 
-    private void ShieldInputHandler(Vector2 input)
+    private void JumpInputHandler()
     {
-        if (Input.GetButtonDown("Fire3"))
+        if (grounded)
         {
-            if (grounded)
+            // dont allow for overwriting jump inputs
+            if (!bufferedJump)
             {
-                // shield
-            }
-            else
-            {
-                // if tech
-                // else if l-cancel
-
-                // else
-                AirDodge(input);
+                jumpSquatStart = Time.time;
+                inJumpSquat = true;
+                bufferedJump = true;
             }
         }
+        else
+        {
+            TryJump();
+        }
+    }
+
+    private bool CanJump()
+    {
+        return airJumps > 0 || grounded;
     }
 
     private void TryJump()
     {
         if (!CanJump()) return;
+
+        // no longer in jump squat because we will jump this frame. buffered jump should be reset in parent function
+        inJumpSquat = false;
 
         // if try jump while airborne, subtract from number of airjumps
         if (!grounded) airJumps -= 1;
@@ -166,17 +234,12 @@ public class PlayerController : MonoBehaviour
         rb.velocity = vel;
     }
 
-    private bool CanJump()
-    {
-        return airJumps > 0 || grounded;
-    }
-
     private bool isFalling()
     {
         return rb.velocity.y <= 0 && !grounded;
     }
 
-    private void AirDodge(Vector2 input)
+    private void TryAirDodge()
     {
         rb.useGravity = false; // disable gravity
         input *= airDodgeForce; // multiply input by force
@@ -184,6 +247,10 @@ public class PlayerController : MonoBehaviour
 
         airDodgeStartTime = Time.time;
         airDodging = true;
+
+        // in case of wave dash
+        bufferedJump = false;
+        inJumpSquat = false;
     }
 
     private void StopAirDodge()
@@ -193,11 +260,23 @@ public class PlayerController : MonoBehaviour
         helpless = true;
     }
 
-    void OnCollisionEnter(Collision theCollision)
+    // TEMPORARY
+    // TEMPORARY
+    // TEMPORARY
+    void OnCollisionEnter(Collision collision)
     {
-        if (theCollision.gameObject.name == "floor")
+        TouchingGround(collision);
+    }
+
+    void OnCollisionStay(Collision collision)
+    {
+        TouchingGround(collision);
+    }
+
+    private void TouchingGround(Collision collision)
+    {
+        if (collision.gameObject.name == "floor")
         {
-            Debug.Log("A");
             // wavedash
             if (airDodging) 
             {
@@ -212,9 +291,9 @@ public class PlayerController : MonoBehaviour
     }
      
      //consider when character is jumping .. it will exit collision.
-     void OnCollisionExit(Collision theCollision)
+     void OnCollisionExit(Collision collision)
      {
-         if (theCollision.gameObject.name == "floor")
+         if (collision.gameObject.name == "floor")
          {
              grounded = false;
          }
