@@ -60,8 +60,8 @@ public class PlayerController : MonoBehaviour
         controls.Gameplay.Jump.started += ctx => { // when jump button is pressed, full hop is prepped
             if (!Actionable()) return;
 
-            JumpInputHandler();
             jumpForce = fullJumpForce;
+            JumpInputHandler();
         };
         controls.Gameplay.Jump.canceled += ctx => jumpForce = shortJumpForce; // if jump button is released in time, short hop force will be loaded
 
